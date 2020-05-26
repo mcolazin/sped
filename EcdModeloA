@@ -1,0 +1,67 @@
+# Extração de Dados em linguagem R SPED-ECD.
+# Modelo criado para conexão em cada Banco de Dados do SPED ECD, realizar o processamento necessário e retornar 
+# arquivos de balancetes e DRE anual
+
+# array 1D contendo strings dos nomes dos 11BDs.
+bancos = c("bd20200427221030", "bd20200427222718", "bd20200427222948", "bd20200427223255", "bd20200427223758", 
+           "bd20200427224131", "bd20200427225903", "bd20200427230322", "bd20200427230648",
+           "bd20200427231841", "bd20200427232753")
+
+# escolha o número de iterações (11 meses)
+x = 11
+
+
+for(i in bancos) {
+  library(RMySQL)
+  library(dplyr)
+  library(xlsx)
+  library(sqldf)
+  
+  print(i)
+
+  
+  bd_name = i
+  
+  # criando conexão com o Mysql DB.
+  conn <- dbConnect(MySQL(), port=3340, 
+                    unix.socket="spedcontabil3340", 
+                    username = "spedfiscal",
+                    password = "spedfiscal", 
+                    host="localhost", dbname=bd_name)
+  
+
+  
+  # import all mensal balancetes - ID_PAI representa os meses
+  balancetes_mensais <- dbReadTable(conn, "reg_i155")
+  
+  # import nome das contas nos planos de contas - KEY com COD_CTA
+  plano_contas <- dbReadTable(conn, "reg_i050")
+  plano_contas <- plano_contas[,-2]
+  
+  # JOIN de tabelas: Balancetes mensais com plano de contas:
+  balancetes_verificacao <- left_join(plano_contas, balancetes_mensais, by = "COD_CTA") %>%
+    select(ID_PAI, COD_CTA, CTA, COD_CCUS, VL_DEB,IND_DC_FIN ,VL_CRED)
+  
+  # Disconnect database
+  dbDisconnect(conn)
+  
+  # CLICAR EM LIBERAR A BIBLIOTECA RMysql
+  # Biblioteca RMysql deve ser desabilitado para a utilização da library(sqldf)
+  detach("package:RMySQL", unload = TRUE)
+  
+  ##### Criando Balancetes:
+  
+  bal <- sqldf(
+    "SELECT ID_PAI, COD_CTA,CTA,VL_DEB, VL_CRED, (VL_CRED-VL_DEB) AS total_month  
+  FROM balancetes_verificacao
+  WHERE ID_PAI == 1 AND COD_CTA >= '0004000000' AND COD_CTA < '0005000000' ")
+  
+  # escrever XLS dos balancetes.
+  write.xlsx(bal, paste(x,".xlsx"))
+
+  x = x-1
+
+  
+}
+
+
